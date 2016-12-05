@@ -18,16 +18,15 @@
 #include <WS2tcpip.h>
 #include <windows.h>
 #include <sstream>
+#include <direct.h>
 
 #include <iphlpapi.h>
 #include <stdlib.h>
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "ws2_32.lib")
-#pragma comment(lib,"Dbghelp.lib")
 
 
 #define mtl_endl "\n"
-
 
 
 bool GenMachineCode(std::string &strMAC) {
@@ -287,6 +286,25 @@ private:
 
 };
 
+std::string GetEvnPath(const char *env, bool div = true)
+{
+	char *dive, *filename;
+	size_t size = 0;
+
+	_dupenv_s(&dive, &size, "HOMEDRIVE");
+	_dupenv_s(&filename, &size, env);
+
+	std::string s = "";
+	if (div)
+		s = dive;
+	s += filename;
+
+	delete dive;
+	delete filename;
+
+	return s;
+}
+
 
 class GracePeriodHandler
 {
@@ -302,21 +320,33 @@ public:
 		if (hx && WaitForSingleObject(hx, 2) != WAIT_TIMEOUT)
 		{
 			FILE *fd;
-			char *dive, *filename;
-			char filepath[MAX_PATH];
-			size_t size = 0;
+			char buff[4096];
 
-			_dupenv_s(&dive, &size, "HOMEDRIVE");
-			_dupenv_s(&filename, &size, "HOMEPATH");
+			char path[3][MAX_PATH];	
+			std::string hompath = GetEvnPath("HOMEPATH");
+			std::string tmppath = GetEvnPath("TEMP",false);
+			std::string appath = hompath + "/autodwg";
 
-			sprintf_s(filepath, "%s%s\\autodwg_%d.lic", dive, filename, NCModel::GetInstance()->pid());
+			sprintf_s(path[0], "%s\\autodwg_%d.lic", hompath.c_str(), NCModel::GetInstance()->pid());
+			sprintf_s(path[1], "%s\\autodwg_%d.lic", tmppath.c_str(), NCModel::GetInstance()->pid());
+			sprintf_s(path[2], "%s\\autodwg_%d.lic", appath.c_str(), NCModel::GetInstance()->pid());
 
-			delete filename;
-			delete dive;
+			int check_count = 3;
+			bool exist = false;
+			while (--check_count) {
+				FILE *tfd;
+				if (!fopen_s(&tfd, path[check_count], "rb+")) {
+					exist = true;
+					fclose(tfd);
+					continue;
+				}
+				exist = false;
+			}
 
-			if (!fopen_s(&fd, filepath, "rb+")) {
+			// 随机取
+			if (exist && !fopen_s(&fd,path[ time(0) % 3 ], "rb+")) {
 
-				char buff[4096];
+				
 				fpos_t filesize = 0;
 				if (0 == fseek(fd, 0, SEEK_END))
 					fgetpos(fd, &filesize);
@@ -370,29 +400,30 @@ public:
 		HANDLE hx = CreateMutex(NULL, FALSE, L"GP_INFO_WREITE_M");
 		if (hx && WaitForSingleObject(hx, 2) != WAIT_TIMEOUT)
 		{
+			char path[3][MAX_PATH];
+			std::string hompath = GetEvnPath("HOMEPATH");
+			std::string tmppath = GetEvnPath("TEMP",false);
+			std::string appath = hompath + "/autodwg";
+
+			_mkdir(appath.c_str());
+
+			sprintf_s(path[0], "%s\\autodwg_%d.lic", hompath.c_str(), NCModel::GetInstance()->pid());
+			sprintf_s(path[1], "%s\\autodwg_%d.lic", tmppath.c_str(), NCModel::GetInstance()->pid());
+			sprintf_s(path[2], "%s\\autodwg_%d.lic", appath.c_str(), NCModel::GetInstance()->pid());
+
 			FILE *fd;
-
-			// 获取 homepath 目录
-			char *dive,*filename;
-			char filepath[MAX_PATH];
-			size_t size = 0;
-
-			_dupenv_s(&dive, &size, "HOMEDRIVE");
-			_dupenv_s(&filename, &size, "HOMEPATH");
-
-			sprintf_s(filepath, "%s%s\\autodwg_%d.lic", dive, filename, NCModel::GetInstance()->pid());
-
-			delete filename;
-			delete dive;
-
-			if (!fopen_s(&fd, filepath, "wb")) {
-				std::string mac;
-				GenMachineCode(mac);
-				fwrite(mac.c_str(), 1, mac.length(), fd);
-				fwrite((const char *)&ex,1,sizeof(ex), fd);
-				fwrite((const char *)&now, 1, sizeof(now), fd);
-				fclose(fd);
+			int write_count = 3;
+			while (--write_count) {
+				if (!fopen_s(&fd, path[write_count], "wb")) {
+					std::string mac;
+					GenMachineCode(mac);
+					fwrite(mac.c_str(), 1, mac.length(), fd);
+					fwrite((const char *)&ex, 1, sizeof(ex), fd);
+					fwrite((const char *)&now, 1, sizeof(now), fd);
+					fclose(fd);
+				}
 			}
+			
 		}
 
 		ReleaseMutex(hx);
