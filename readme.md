@@ -27,9 +27,11 @@ int main(int argc ,char *argv[])
     actived = lic_license());
     std::cout << actived ? "f" : "t" << std::endl;
     // 输出 debug 日志信息
-    log = log_stream();
-    std::cout << log << std::endl;
-    free_log_stream(log);
+    if(log = log_stream()){
+      std::cout << log << std::endl;
+      free_log_stream(log);
+    }
+
     Sleep(1000);
   }
   while( --runtime );
